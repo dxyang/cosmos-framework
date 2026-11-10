@@ -21,6 +21,10 @@ _SUPPORTED_DATASET_TARGETS = {
         "CanonicalLanceYAMDataset",
         "CanonicalLanceembodiment_aDataset",
     )
+} | {
+    # Camera-only trajectories (the camera_pose domain), used by the underwater world model.
+    f"{prefix}lance.lance_camera_dataset.LanceCameraDataset"
+    for prefix in (_FRAMEWORK_DATASET_PREFIX, _LEGACY_DATASET_PREFIX)
 }
 
 

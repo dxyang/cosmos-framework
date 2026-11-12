@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import random
 from collections import defaultdict
 from collections.abc import Callable, Iterator
@@ -267,6 +268,12 @@ class LocalSimulationJointDataLoader(IterativeJointDataLoader):
             for name, limit, loader in zip(self.dataset_name_list, sample_limits, self.dataloader_list)
         )
         state = consume_local_resume_state()
+        if iteration and os.environ.get("COSMOS_SKIP_DATA_REPLAY") == "1":
+            # Opt-in: do not restore the saved data position. A restart then begins the data stream afresh
+            # instead of replaying every earlier batch (hours at thousands of iterations, with idle GPUs).
+            # Batches are counted from this iteration on, so a later full resume still replays only those.
+            state = None
+            self.restart_data_iterator_on_handoff = True
         counts = [0] * len(self.dataloader_list)
         self._fetch_origin = 0
         if state is not None:

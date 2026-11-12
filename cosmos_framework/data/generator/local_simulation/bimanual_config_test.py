@@ -291,3 +291,43 @@ def test_resume_identity_includes_effective_resolution(tmp_path: Path) -> None:
     assert identities[0]["bundle_digest"] == identities[1]["bundle_digest"]
     assert identities[0]["transform_overrides"] != identities[1]["transform_overrides"]
     assert identities[0] != identities[1]
+
+
+def _packed_loader(root: Path) -> Any:
+    # One stream with a token limit, so batches are packed and a resume must replay them.
+    _bundle(root)
+    _retain_strata(root, {"agibot"})
+    return make_bimanual_local_dataloader(str(root), 0, 16, 4, 2, 10000, 4)
+
+
+def test_resume_replays_earlier_batches_by_default(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("COSMOS_SKIP_DATA_REPLAY", raising=False)
+    loader = _packed_loader(tmp_path)
+    loader.set_start_iteration(50)
+    assert loader._resume_replay_batches == 50
+    assert loader._fetch_origin == 0
+
+
+def test_skip_data_replay_starts_the_data_afresh_and_counts_from_the_restart(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("COSMOS_SKIP_DATA_REPLAY", "1")
+    loader = _packed_loader(tmp_path)
+    loader.set_start_iteration(50)
+    assert loader._resume_replay_batches == 0
+    # Later full resumes compare against the trainer's absolute counter, offset by this restart point.
+    assert loader._fetch_origin == 50
+    assert loader._fetch_count == 50
+    assert loader._stream_fetch_counts == [0]
+
+
+def test_skip_data_replay_ignores_the_saved_data_position(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from cosmos_framework.data.generator.local_simulation import resume as resume_module
+
+    monkeypatch.setenv("COSMOS_SKIP_DATA_REPLAY", "1")
+    loader = _packed_loader(tmp_path)
+    saved = {"format_version": 1, "fetch_count": 50, "fetch_origin": 0, "stream_fetch_counts": [50], "identity": {}}
+    monkeypatch.setattr(resume_module, "_LOADED_STATE", saved)
+    loader.set_start_iteration(50)  # would raise on the mismatched identity if the saved state were used
+    assert loader._resume_replay_batches == 0
+    assert loader._fetch_origin == 50
